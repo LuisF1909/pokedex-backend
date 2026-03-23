@@ -1,7 +1,15 @@
+require("dotenv").config(); // Esto lee tu archivo .env (Requisito cumplido)
 const express = require("express");
 const cors = require("cors");
 const webpush = require("web-push");
-require("dotenv").config(); // Esto lee tu archivo .env (Requisito cumplido)
+
+// Importar Base de Datos (esto inicializa SQLite)
+const db = require("./db");
+const { authenticateToken } = require("./middleware/auth");
+
+// Importar Rutas
+const authRoutes = require("./routes/auth");
+const pokemonRoutes = require("./routes/pokemon");
 
 const app = express();
 const port = 3000;
@@ -18,47 +26,49 @@ webpush.setVapidDetails(
   process.env.PRIVATE_VAPID_KEY
 );
 
-// Array temporal para simular una base de datos de usuarios
-let suscripcionesGuardadas = [];
-
-// Endpoint para guardar suscripciones
-app.post("/api/subscribe", (req, res) => {
+// Endpoints de Suscripción (Guarda en BD con autenticación JWT)
+app.post("/api/subscribe", authenticateToken, (req, res) => {
   const suscripcion = req.body;
-  suscripcionesGuardadas.push(suscripcion);
-  res.status(201).json({ message: "Usuario suscrito a notificaciones" });
+  const userId = req.user.id;
+  const subscriptionJson = JSON.stringify(suscripcion);
+
+  // Upsert: si ya existe una suscripción para este usuario, la actualizamos
+  db.get('SELECT id FROM push_subscriptions WHERE user_id = ?', [userId], (err, row) => {
+    if (err) return res.status(500).json({ error: 'Error de servidor' });
+
+    if (row) {
+      db.run('UPDATE push_subscriptions SET subscription_json = ? WHERE id = ?',
+        [subscriptionJson, row.id],
+        (err) => {
+          if (err) return res.status(500).json({ error: 'Error actualizando suscripción' });
+          res.status(200).json({ message: 'Suscripción push actualizada' });
+        });
+    } else {
+      db.run('INSERT INTO push_subscriptions (user_id, subscription_json) VALUES (?, ?)',
+        [userId, subscriptionJson],
+        (err) => {
+          if (err) return res.status(500).json({ error: 'Error guardando suscripción' });
+          res.status(201).json({ message: 'Usuario suscrito a notificaciones' });
+        });
+    }
+  });
 });
 
 // ==========================================================
-// 2. ENDPOINTS PARA ENVIAR NOTIFICACIONES PUSH
+// 2. RUTAS DE LA API (BFF)
 // ==========================================================
 
-// Endpoint: Invitación de Amistad
-app.post("/api/amigos/invitar", (req, res) => {
-  const payload = JSON.stringify({
-    titulo: "¡Nueva Solicitud de Amistad!",
-    mensaje: "Un entrenador quiere agregarte a su lista de amigos."
-  });
+// --- Autenticación ---
+app.use("/api/auth", authRoutes);
 
-  suscripcionesGuardadas.forEach(suscripcion => {
-    webpush.sendNotification(suscripcion, payload).catch(err => console.error(err));
-  });
-  
-  res.status(200).json({ message: "Notificación de amistad enviada" });
-});
+// --- Proxies PokeAPI ---
+app.use("/api/pokemon", pokemonRoutes);
 
-// Endpoint: Reto a Batalla
-app.post("/api/batallas/retar", (req, res) => {
-  const payload = JSON.stringify({
-    titulo: "¡Te han retado a una batalla!",
-    mensaje: "¡Prepara tu equipo Pokémon, la batalla está por comenzar!"
-  });
+// --- Funciones Sociales y de Usuario ---
+const socialRoutes = require('./routes/social');
+app.use("/api/social", socialRoutes);
 
-  suscripcionesGuardadas.forEach(suscripcion => {
-    webpush.sendNotification(suscripcion, payload).catch(err => console.error(err));
-  });
-  
-  res.status(200).json({ message: "Notificación de batalla enviada" });
-});
+// (Endpoints legado eliminados — la lógica Push se maneja en routes/social.js)
 
 app.listen(port, () => {
   console.log(`Servidor escuchando en http://localhost:${port}`);
