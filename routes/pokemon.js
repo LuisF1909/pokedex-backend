@@ -122,6 +122,64 @@ router.get('/:id', async (req, res) => {
     }
 });
 
+// GET /api/pokemon/filter/types?type1=fire&type2=flying
+// Filtrar por combinación de tipo 1 y tipo 2
+router.get('/filter/types', async (req, res) => {
+    const { type1, type2 } = req.query;
+
+    if (!type1) {
+        return res.status(400).json({ error: 'Se requiere al menos type1' });
+    }
+
+    try {
+        // Obtener pokémon del tipo 1
+        const res1 = await axios.get(`${POKEAPI_BASE}/type/${type1}`);
+        const type1Set = new Map();
+        for (const p of res1.data.pokemon) {
+            const parts = p.pokemon.url.split('/');
+            const id = parts[parts.length - 2];
+            type1Set.set(id, p.pokemon.name);
+        }
+
+        let results;
+
+        if (type2 && type2 !== type1) {
+            // Obtener pokémon del tipo 2 e intersectar
+            const res2 = await axios.get(`${POKEAPI_BASE}/type/${type2}`);
+            const intersection = [];
+            for (const p of res2.data.pokemon) {
+                const parts = p.pokemon.url.split('/');
+                const id = parts[parts.length - 2];
+                if (type1Set.has(id)) {
+                    intersection.push({
+                        name: p.pokemon.name,
+                        id,
+                        image: `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`
+                    });
+                }
+            }
+            results = intersection;
+        } else {
+            // Solo tipo 1
+            results = Array.from(type1Set.entries()).map(([id, name]) => ({
+                name,
+                id,
+                image: `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/${id}.png`
+            }));
+        }
+
+        // Ordenar por ID y limitar a IDs razonables (excluir formas alternativas > 10000)
+        results = results
+            .filter(p => parseInt(p.id) <= 1025)
+            .sort((a, b) => parseInt(a.id) - parseInt(b.id));
+
+        res.json({ type1, type2: type2 || null, results });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Error al filtrar por tipos' });
+    }
+});
+
 // GET /api/pokemon/filter/type/:type
 // Filtrar por tipo (el frontend podría usar esto o cargar todos en caché)
 router.get('/filter/type/:type', async (req, res) => {

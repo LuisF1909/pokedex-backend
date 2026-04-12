@@ -1,20 +1,44 @@
-require("dotenv").config(); // Esto lee tu archivo .env (Requisito cumplido)
+require("dotenv").config();
 const express = require("express");
+const http = require("http");
 const cors = require("cors");
+const { Server } = require("socket.io");
 const webpush = require("web-push");
 
 // Importar Base de Datos (esto inicializa SQLite)
 const db = require("./db");
 const { authenticateToken } = require("./middleware/auth");
+const { initBattleSocket } = require("./battleSocket");
 
 // Importar Rutas
 const authRoutes = require("./routes/auth");
 const pokemonRoutes = require("./routes/pokemon");
+const socialRoutes = require('./routes/social');
 
 const app = express();
-const port = 3000;
+const server = http.createServer(app);
+const port = process.env.PORT || 3000;
 
-app.use(cors());
+// Configuración CORS dinámica
+const allowedOrigins = process.env.FRONTEND_URL || "*";
+
+app.use(cors({
+  origin: allowedOrigins === "*" ? "*" : allowedOrigins.split(",").map(s => s.trim()),
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  credentials: allowedOrigins !== "*"
+}));
+
+// Socket.IO con CORS
+const io = new Server(server, {
+  cors: {
+    origin: allowedOrigins === "*" ? "*" : allowedOrigins.split(",").map(s => s.trim()),
+    methods: ["GET", "POST"]
+  }
+});
+
+// Inicializar WebSocket de batallas
+initBattleSocket(io);
+
 app.use(express.json());
 
 // ==========================================================
@@ -65,11 +89,17 @@ app.use("/api/auth", authRoutes);
 app.use("/api/pokemon", pokemonRoutes);
 
 // --- Funciones Sociales y de Usuario ---
-const socialRoutes = require('./routes/social');
 app.use("/api/social", socialRoutes);
 
-// (Endpoints legado eliminados — la lógica Push se maneja en routes/social.js)
+// Health check endpoint (útil para Railway)
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
 
-app.listen(port, () => {
-  console.log(`Servidor escuchando en http://localhost:${port}`);
+// ==========================================================
+// 3. INICIAR SERVIDOR
+// ==========================================================
+server.listen(port, "0.0.0.0", () => {
+  console.log(`🚀 Servidor escuchando en http://0.0.0.0:${port}`);
+  console.log(`📡 CORS permitido para: ${allowedOrigins}`);
 });
