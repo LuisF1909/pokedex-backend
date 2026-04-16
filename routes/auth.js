@@ -38,11 +38,11 @@ router.post('/register', async (req, res) => {
             user: { id: result.rows[0].id, email, friend_code: friendCode }
         });
     } catch (error) {
-        console.error('REGISTER ERROR:', error.message, error.code);
+        console.error('REGISTER ERROR:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
         if (error.code === '23505') {
             return res.status(400).json({ error: 'El email ya está registrado.' });
         }
-        res.status(500).json({ error: 'Error interno del servidor.', detail: error.message });
+        res.status(500).json({ error: 'Error interno del servidor.', detail: error.message, code: error.code, stack: error.stack?.split('\n')[0] });
     }
 });
 
