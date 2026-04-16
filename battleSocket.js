@@ -44,7 +44,7 @@ function initBattleSocket(io) {
 
             // Verificar amistad
             const friendship = await dbGet(
-                'SELECT * FROM friends WHERE user_id_1 = ? AND user_id_2 = ?',
+                'SELECT * FROM friends WHERE user_id_1 = $1 AND user_id_2 = $2',
                 [userId, friendId]
             );
             if (!friendship) {
@@ -53,7 +53,7 @@ function initBattleSocket(io) {
 
             // Verificar que el equipo existe
             const team = await dbGet(
-                'SELECT * FROM teams WHERE id = ? AND user_id = ?',
+                'SELECT * FROM teams WHERE id = $1 AND user_id = $2',
                 [myTeamId, userId]
             );
             if (!team) {
@@ -61,7 +61,7 @@ function initBattleSocket(io) {
             }
 
             // Obtener email del retador
-            const challenger = await dbGet('SELECT email FROM users WHERE id = ?', [userId]);
+            const challenger = await dbGet('SELECT email FROM users WHERE id = $1', [userId]);
 
             const challengeId = `challenge_${++challengeCounter}_${Date.now()}`;
             pendingChallenges.set(challengeId, {
@@ -104,7 +104,7 @@ function initBattleSocket(io) {
 
             // Verificar equipo del aceptante
             const team = await dbGet(
-                'SELECT * FROM teams WHERE id = ? AND user_id = ?',
+                'SELECT * FROM teams WHERE id = $1 AND user_id = $2',
                 [myTeamId, userId]
             );
             if (!team) {
@@ -119,7 +119,7 @@ function initBattleSocket(io) {
             try {
                 // Cargar datos de ambos equipos
                 const challengerTeam = await dbGet(
-                    'SELECT * FROM teams WHERE id = ?',
+                    'SELECT * FROM teams WHERE id = $1',
                     [challenge.challengerTeamId]
                 );
                 const accepterTeam = team;
@@ -464,15 +464,11 @@ function resolveTurn(io, battle) {
 }
 
 // =============================================
-// HELPER: Promisificar db.get
+// HELPER: Wrapper para pg (devuelve la primera fila)
 // =============================================
-function dbGet(query, params) {
-    return new Promise((resolve, reject) => {
-        db.get(query, params, (err, row) => {
-            if (err) return reject(err);
-            resolve(row);
-        });
-    });
+async function dbGet(query, params) {
+    const { rows } = await db.query(query, params);
+    return rows[0] || null;
 }
 
 module.exports = { initBattleSocket };
