@@ -47,14 +47,8 @@ async function initDb() {
     }
 }
 
-pool.connect((err, client, release) => {
-    if (err) {
-        console.error('Error al conectar con PostgreSQL:', err.message);
-    } else {
-        release();
-        console.log('Conectado a PostgreSQL.');
-        initDb().catch(console.error);
-    }
-});
+initDb()
+    .then(() => console.log('Conectado a PostgreSQL y tablas listas.'))
+    .catch(err => console.error('Error iniciando PostgreSQL:', err.message));
 
 module.exports = pool;
