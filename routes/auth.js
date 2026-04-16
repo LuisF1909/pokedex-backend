@@ -28,64 +28,58 @@ router.post('/register', async (req, res) => {
         const hashedPassword = await bcrypt.hash(password, 10);
         const friendCode = generateFriendCode();
 
-        const stmt = db.prepare('INSERT INTO users (email, password, friend_code) VALUES (?, ?, ?)');
-        stmt.run([email, hashedPassword, friendCode], function (err) {
-            if (err) {
-                if (err.message.includes('UNIQUE constraint failed')) {
-                    return res.status(400).json({ error: 'El email ya está registrado.' });
-                }
-                return res.status(500).json({ error: 'Error interno del servidor.' });
-            }
+        const result = await db.query(
+            'INSERT INTO users (email, password, friend_code) VALUES ($1, $2, $3) RETURNING id',
+            [email, hashedPassword, friendCode]
+        );
 
-            // Devolvemos datos del usuario pero sin la contraseña
-            res.status(201).json({
-                message: 'Usuario registrado exitosamente',
-                user: { id: this.lastID, email, friend_code: friendCode }
-            });
+        res.status(201).json({
+            message: 'Usuario registrado exitosamente',
+            user: { id: result.rows[0].id, email, friend_code: friendCode }
         });
-        stmt.finalize();
     } catch (error) {
-        res.status(500).json({ error: 'Error al procesar el registro.' });
+        if (error.code === '23505') {
+            return res.status(400).json({ error: 'El email ya está registrado.' });
+        }
+        res.status(500).json({ error: 'Error interno del servidor.' });
     }
 });
 
 // POST /api/auth/login
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
     const { email, password } = req.body;
 
     if (!email || !password) {
         return res.status(400).json({ error: 'Email y contraseña requeridos.' });
     }
 
-    db.get('SELECT * FROM users WHERE email = ?', [email], async (err, user) => {
-        if (err) {
-            return res.status(500).json({ error: 'Error de base de datos.' });
-        }
+    try {
+        const { rows } = await db.query('SELECT * FROM users WHERE email = $1', [email]);
+        const user = rows[0];
+
         if (!user) {
             return res.status(400).json({ error: 'Credenciales inválidas.' });
         }
 
-        try {
-            const match = await bcrypt.compare(password, user.password);
-            if (match) {
-                const token = jwt.sign(
-                    { id: user.id, email: user.email, friend_code: user.friend_code },
-                    JWT_SECRET,
-                    { expiresIn: '7d' } // Expira en 7 días
-                );
-
-                res.json({
-                    message: 'Login exitoso',
-                    token,
-                    user: { id: user.id, email: user.email, friend_code: user.friend_code }
-                });
-            } else {
-                res.status(400).json({ error: 'Credenciales inválidas.' });
-            }
-        } catch (error) {
-            res.status(500).json({ error: 'Error al verificar la contraseña.' });
+        const match = await bcrypt.compare(password, user.password);
+        if (!match) {
+            return res.status(400).json({ error: 'Credenciales inválidas.' });
         }
-    });
+
+        const token = jwt.sign(
+            { id: user.id, email: user.email, friend_code: user.friend_code },
+            JWT_SECRET,
+            { expiresIn: '7d' }
+        );
+
+        res.json({
+            message: 'Login exitoso',
+            token,
+            user: { id: user.id, email: user.email, friend_code: user.friend_code }
+        });
+    } catch (error) {
+        res.status(500).json({ error: 'Error de base de datos.' });
+    }
 });
 
 module.exports = router;

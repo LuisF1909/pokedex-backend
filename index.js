@@ -5,7 +5,7 @@ const cors = require("cors");
 const { Server } = require("socket.io");
 const webpush = require("web-push");
 
-// Importar Base de Datos (esto inicializa SQLite)
+// Importar Base de Datos (esto inicializa PostgreSQL)
 const db = require("./db");
 const { authenticateToken } = require("./middleware/auth");
 const { initBattleSocket } = require("./battleSocket");
@@ -51,31 +51,25 @@ webpush.setVapidDetails(
 );
 
 // Endpoints de Suscripción (Guarda en BD con autenticación JWT)
-app.post("/api/subscribe", authenticateToken, (req, res) => {
+app.post("/api/subscribe", authenticateToken, async (req, res) => {
   const suscripcion = req.body;
   const userId = req.user.id;
   const subscriptionJson = JSON.stringify(suscripcion);
 
-  // Upsert: si ya existe una suscripción para este usuario, la actualizamos
-  db.get('SELECT id FROM push_subscriptions WHERE user_id = ?', [userId], (err, row) => {
-    if (err) return res.status(500).json({ error: 'Error de servidor' });
+  try {
+    const { rows } = await db.query('SELECT id FROM push_subscriptions WHERE user_id = $1', [userId]);
 
-    if (row) {
-      db.run('UPDATE push_subscriptions SET subscription_json = ? WHERE id = ?',
-        [subscriptionJson, row.id],
-        (err) => {
-          if (err) return res.status(500).json({ error: 'Error actualizando suscripción' });
-          res.status(200).json({ message: 'Suscripción push actualizada' });
-        });
+    if (rows.length > 0) {
+      await db.query('UPDATE push_subscriptions SET subscription_json = $1 WHERE id = $2', [subscriptionJson, rows[0].id]);
+      res.status(200).json({ message: 'Suscripción push actualizada' });
     } else {
-      db.run('INSERT INTO push_subscriptions (user_id, subscription_json) VALUES (?, ?)',
-        [userId, subscriptionJson],
-        (err) => {
-          if (err) return res.status(500).json({ error: 'Error guardando suscripción' });
-          res.status(201).json({ message: 'Usuario suscrito a notificaciones' });
-        });
+      await db.query('INSERT INTO push_subscriptions (user_id, subscription_json) VALUES ($1, $2)', [userId, subscriptionJson]);
+      res.status(201).json({ message: 'Usuario suscrito a notificaciones' });
     }
-  });
+  } catch (err) {
+    console.error('Error en suscripción push:', err.message);
+    res.status(500).json({ error: 'Error de servidor' });
+  }
 });
 
 // ==========================================================
