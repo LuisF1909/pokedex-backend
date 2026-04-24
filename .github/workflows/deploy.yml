@@ -1,0 +1,51 @@
+name: Deploy Backend to Railway
+
+# Dispara en push a main y permite lanzarlo manualmente desde la UI de GitHub
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Build and Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Clonar el repo
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. Preparar Node.js 20 con cache de npm
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # 3. Instalar dependencias exactamente como en package-lock.json
+      - name: Install dependencies
+        run: npm ci
+
+      # 4. (Opcional) validar que el proyecto arranca sin errores de sintaxis
+      - name: Syntax check
+        run: node --check index.js
+
+      # 5. Instalar la CLI de Railway
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      # 6. Desplegar a Railway
+      #    RAILWAY_TOKEN debe ser un "Project Token" creado en:
+      #    Railway > Project Settings > Tokens
+      #    Guárdalo como secret en:
+      #    GitHub > Settings > Secrets and variables > Actions > New repository secret
+      #      Name:  RAILWAY_TOKEN
+      #      Value: <el token que copiaste de Railway>
+      #
+      #    --service debe coincidir con el nombre exacto del servicio backend
+      #    en tu proyecto de Railway (ej. "pokedex-backend").
+      - name: Deploy to Railway
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: railway up --service pokedex-backend --ci
